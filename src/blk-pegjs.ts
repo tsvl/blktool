@@ -165,10 +165,12 @@ export namespace blk
 
       let parser = await getParser();
 
-      const tabSize = 2
-      const indentWith = ' '
+      // Use editor's indentation settings
+      const tabSize = options.tabSize || 2;
+      const insertSpaces = options.insertSpaces !== undefined ? options.insertSpaces : true;
+      const indentWith = insertSpaces ? ' '.repeat(tabSize) : '\t';
 
-      // Get the user's formatting preferences
+      // Get the user's formatting preferences for spaces around tokens
       let conf = vscode.workspace.getConfiguration("blktool");
       let useSpaces = conf.get<boolean>('formatter.useSpaces', true);
 
@@ -192,14 +194,14 @@ export namespace blk
               if (ch !== ';')
                 this.addInsert(document, param.location.end.offset, ';')
               if (paramLinePrev === -1 && paramLine !== blockLine) {
-                const indent = indentWith.repeat(level * tabSize);
+                const indent = indentWith.repeat(level);
                 this.addEdit(document, param.indent.start.offset, param.indent.end.offset, indent);
               }
               else
                 this.addEdit(document, param.indent.start.offset, param.indent.end.offset, ' ');
             }
             else {
-              const indent = indentWith.repeat(level * tabSize);
+              const indent = indentWith.repeat(level);
               this.addEdit(document, param.indent.start.offset, param.indent.end.offset, indent);
             }
             paramLinePrev = param.location.start.line;
@@ -278,12 +280,12 @@ export namespace blk
             lines[lineNum].push({ type: 'empty line', value: emptyline });
           }
 
-          const indent = indentWith.repeat(level * tabSize);
+          const indent = indentWith.repeat(level);
           const isRoot = block.name === '';
           const isEmpty = block.params.length <= 0 && block.blocks.length <= 0 && block.includes.length <= 0 && block.comments.length <= 0;
           const isOneLine = !isRoot && block.blocks.length <= 0 && block.includes.length <= 0  && block.comments.length <= 0 && block.params.length > 0 && block.location.start.line === block.params[0].location.start.line;
           const isMultiLine = !isOneLine && !isEmpty;
-          const prevIndent = isOneLine || isEmpty || isRoot ? '' : (indentWith.repeat((level - 1) * tabSize));
+          const prevIndent = isOneLine || isEmpty || isRoot ? '' : (indentWith.repeat(level - 1));
 
           const fmt = {
             param: v => `${isOneLine ? '' : indent}${formatParamName(v)}:${v.value[1]}${equalSpacing}${formatParamValue(v)}`,
