@@ -8,52 +8,48 @@ import { readFile } from 'fs';
 import * as pegjs from 'pegjs';
 
 async function getParser(): Promise<any> {
-	return new Promise<any>((resolve, reject) => {
-		readFile(`${__dirname}/../../blk.pegjs`, (err, content) => {
-			if (!!err) {
-				reject(err);
-			}
-			else {
-				resolve(pegjs.generate(content.toString()));
-			}
-		});
-	});
+  return new Promise<any>((resolve, reject) => {
+    readFile(`${__dirname}/../../blk.pegjs`, (err, content) => {
+      if (!!err) {
+        reject(err);
+      }
+      else {
+        resolve(pegjs.generate(content.toString()));
+      }
+    });
+  });
 }
 
 async function getFileContent(filename: string): Promise<string> {
   // console.log({ filename });
   return new Promise<any>((resolve, reject) => {
-		readFile(filename, (err, content) => {
-			if (!!err) {
-				reject("");
-			}
-			else {
-				resolve(content.toString());
-			}
-		});
-	});
+    readFile(filename, (err, content) => {
+      if (!!err) {
+        reject("");
+      }
+      else {
+        resolve(content.toString());
+      }
+    });
+  });
 }
 
-export namespace blk
-{
+export namespace blk {
   let g_diagnostic_collection: vscode.DiagnosticCollection = null;
 
-  export function setDiagnosticCollection(diagnosticCollection: vscode.DiagnosticCollection)
-  {
+  export function setDiagnosticCollection(diagnosticCollection: vscode.DiagnosticCollection) {
     g_diagnostic_collection = diagnosticCollection;
   }
 
-  export async function getIncludes(document: vscode.TextDocument, resolveBlkPath: (text: string, rootPath: string) => string)
-  {
+  export async function getIncludes(document: vscode.TextDocument, resolveBlkPath: (text: string, rootPath: string) => string) {
     let parser = await getParser();
 
     let conf = vscode.workspace.getConfiguration("blktool");
     let readParams = conf.get<string[]>('dependencyTree.readParams');
-    for (let i = 0; i < readParams.length; ++i)
-    {
+    for (let i = 0; i < readParams.length; ++i) {
       readParams[i] = '/' + readParams[i];
     }
-    console.log({readParams});
+    console.log({ readParams });
 
     let fullText = document.getText(/* range */);
 
@@ -62,38 +58,32 @@ export namespace blk
       children: []
     };
 
-    function getIncludesFromBlock(block: any, added = {}, rootBlockPath = "")
-    {
+    function getIncludesFromBlock(block: any, added = {}, rootBlockPath = "") {
       let blockPath = rootBlockPath + block.name;
       // console.log({blockPath});
 
       let includes = [];
-      for (let i of block.includes)
-      {
+      for (let i of block.includes) {
         if (added[i.value])
           continue;
         includes.push({ name: path.basename(i.value), value: `include "${i.value}"`, blockPath });
         added[i.value] = true;
       }
 
-      for (let param of block.params)
-      {
+      for (let param of block.params) {
         let paramPath = blockPath + '/' + param.value[0];
-        if (readParams.indexOf(paramPath) >= 0)
-        {
+        if (readParams.indexOf(paramPath) >= 0) {
           includes.push({ name: path.basename(param.value[2].replace(/["']/g, '')), value: param.value[2], blockPath });
         }
       }
 
-      for (let subblock of block.blocks)
-      {
+      for (let subblock of block.blocks) {
         includes = includes.concat(getIncludesFromBlock(subblock, added, blockPath + '/'));
       }
       return includes;
     }
 
-    async function mkNode(inc: any, rootPath: string)
-    {
+    async function mkNode(inc: any, rootPath: string) {
       let node = { name: inc.name, value: inc.value, children: [] };
       let fullPath = resolveBlkPath(inc.value, rootPath);
       node.value = fullPath;
@@ -104,8 +94,7 @@ export namespace blk
 
       let blkRoot = parser.parse(blkContent);
       let rootIncludes = getIncludesFromBlock(blkRoot, {}, inc.blockPath);
-      for (let i of rootIncludes)
-      {
+      for (let i of rootIncludes) {
         let childNode = await mkNode(i, path.dirname(fullPath));
         node.children.push(childNode);
       }
@@ -113,32 +102,27 @@ export namespace blk
       return Promise.resolve(node);
     }
 
-    try
-    {
+    try {
       let blkRoot = parser.parse(fullText);
-      console.log({blkRoot});
+      console.log({ blkRoot });
       let rootIncludes = getIncludesFromBlock(blkRoot);
-      for (let i of rootIncludes)
-      {
+      for (let i of rootIncludes) {
         let node = await mkNode(i, path.dirname(document.uri.fsPath));
         includesTree.children.push(node);
       }
     }
-    catch (err)
-    {
-      console.log({error: err.message});
+    catch (err) {
+      console.log({ error: err.message });
     }
 
     return Promise.resolve(includesTree);
   }
 
-  export class RangeFormattingEditProvider implements vscode.DocumentRangeFormattingEditProvider
-  {
+  export class RangeFormattingEditProvider implements vscode.DocumentRangeFormattingEditProvider {
     onlyValidate = false;
     edits: vscode.TextEdit[] = [];
 
-    addEdit(document: vscode.TextDocument, from: number, to: number, replaceWith: string)
-    {
+    addEdit(document: vscode.TextDocument, from: number, to: number, replaceWith: string) {
       if (this.onlyValidate)
         return;
 
@@ -147,14 +131,12 @@ export namespace blk
         this.edits.push(vscode.TextEdit.replace(range, replaceWith));
     }
 
-    addInsert(document: vscode.TextDocument, at: number, text: string)
-    {
+    addInsert(document: vscode.TextDocument, at: number, text: string) {
       if (!this.onlyValidate)
         this.edits.push(vscode.TextEdit.insert(document.positionAt(at), text));
     }
 
-    async provideDocumentRangeFormattingEdits(document: vscode.TextDocument, range: vscode.Range, options: vscode.FormattingOptions, token: vscode.CancellationToken): Promise<vscode.TextEdit[]>
-    {
+    async provideDocumentRangeFormattingEdits(document: vscode.TextDocument, range: vscode.Range, options: vscode.FormattingOptions, token: vscode.CancellationToken): Promise<vscode.TextEdit[]> {
       this.edits = [];
 
       let errors: vscode.Diagnostic[] = [];
@@ -203,11 +185,11 @@ export namespace blk
                 this.addEdit(document, param.indent.start.offset, param.indent.end.offset, ' ');
             }
             else {
-              // Apply newline limiting logic here
-              let newlineCount = paramLine - (paramLinePrev !== -1 ? paramLinePrev : blockLine) - 1;
-              let allowedNewlines = Math.min(newlineCount, maxPreservedNewlines);
+              // Fix newline calculation
+              let newlineCount = paramLine - (paramLinePrev !== -1 ? paramLinePrev : blockLine);
+              let allowedNewlines = Math.min(Math.max(newlineCount - 1, 0), maxPreservedNewlines);
 
-              let newIndent = '\n'.repeat(Math.max(1, allowedNewlines)) + indentWith.repeat(level);
+              let newIndent = '\n'.repeat(allowedNewlines + 1) + indentWith.repeat(level);
               this.addEdit(document, param.indent.start.offset, param.indent.end.offset, newIndent);
             }
 
@@ -233,9 +215,9 @@ export namespace blk
           // Convert yes/no/true/false to lowercase regardless of original casing
           const lowerValue = valueStr.toLowerCase();
           if (lowerValue === 'yes' || lowerValue === 'no' ||
-              lowerValue === 'true' || lowerValue === 'false' ||
-              lowerValue === 'on' || lowerValue === 'off' ||
-              lowerValue === '1' || lowerValue === '0') {
+            lowerValue === 'true' || lowerValue === 'false' ||
+            lowerValue === 'on' || lowerValue === 'off' ||
+            lowerValue === '1' || lowerValue === '0') {
             return lowerValue;
           }
 
@@ -306,53 +288,56 @@ export namespace blk
           let emptylines = block.emptylines.filter(v => v.location.start.column === 1);
 
           // Apply maxPreservedNewlines when determining which empty lines to remove
-          // Group consecutive empty lines and keep only up to maxPreservedNewlines
+          // Group consecutive empty lines
+          let groups: number[][] = [];
+          let currentGroup: number[] = [];
           let lastLine = -1;
-          let consecutiveCount = 0;
-          let linesToKeep = {};
 
           // Sort empty lines by line number
           emptylines.sort((a, b) => a.location.start.line - b.location.start.line);
 
-          // First pass - mark lines to keep
+          // Group consecutive empty lines
           for (let emptyline of emptylines) {
             const lineNum = emptyline.location.start.line;
-
-            if (lastLine !== -1 && lineNum === lastLine + 1) {
-              // Consecutive empty line
-              consecutiveCount++;
-              if (consecutiveCount <= maxPreservedNewlines) {
-                linesToKeep[lineNum] = true;
-              } else {
-                emptyline._remove = true;
-              }
-            } else {
-              // Start of a new group of empty lines
-              consecutiveCount = 0;
-              if (maxPreservedNewlines > 0) {
-                // Only keep if we're preserving newlines
-                linesToKeep[lineNum] = true;
-              } else {
-                emptyline._remove = true;
+            if (lastLine !== -1 && lineNum !== lastLine + 1) {
+              if (currentGroup.length > 0) {
+                groups.push(currentGroup);
+                currentGroup = [];
               }
             }
-
+            currentGroup.push(lineNum);
             lastLine = lineNum;
+          }
+          if (currentGroup.length > 0) {
+            groups.push(currentGroup);
+          }
+
+          // Process each group according to maxPreservedNewlines
+          let linesToKeep = {};
+          for (let group of groups) {
+            // Keep only the first maxPreservedNewlines lines from each group
+            for (let i = 0; i < Math.min(maxPreservedNewlines, group.length); i++) {
+              linesToKeep[group[i]] = true;
+            }
           }
 
           // Add the preserved empty lines to the lines array
-          for (let emptyline of emptylines.filter(v => v._remove !== true)) {
+          for (let emptyline of emptylines) {
             const lineNum = emptyline.location.start.line;
-            if (!lines[lineNum]) {
-              lines[lineNum] = [];
+            if (linesToKeep[lineNum]) {
+              if (!lines[lineNum]) {
+                lines[lineNum] = [];
+              }
+              lines[lineNum].push({ type: 'empty line', value: emptyline });
+            } else {
+              emptyline._remove = true;
             }
-            lines[lineNum].push({ type: 'empty line', value: emptyline });
           }
 
           const indent = indentWith.repeat(level);
           const isRoot = block.name === '';
           const isEmpty = block.params.length <= 0 && block.blocks.length <= 0 && block.includes.length <= 0 && block.comments.length <= 0;
-          const isOneLine = !isRoot && block.blocks.length <= 0 && block.includes.length <= 0  && block.comments.length <= 0 && block.params.length > 0 && block.location.start.line === block.params[0].location.start.line;
+          const isOneLine = !isRoot && block.blocks.length <= 0 && block.includes.length <= 0 && block.comments.length <= 0 && block.params.length > 0 && block.location.start.line === block.params[0].location.start.line;
           const isMultiLine = !isOneLine && !isEmpty;
 
           // Check if we should expand this block based on user preference
@@ -360,8 +345,8 @@ export namespace blk
 
           // Use correct indentation for the closing bracket based on expansion status
           const prevIndent = (isOneLine && shouldExpand) ?
-              indentWith.repeat(level) :
-              (isOneLine || isEmpty || isRoot ? '' : indentWith.repeat(level - 1));
+            indentWith.repeat(level) :
+            (isOneLine || isEmpty || isRoot ? '' : indentWith.repeat(level - 1));
 
           const fmt = {
             param: v => `${(isOneLine && !shouldExpand) ? '' : indent}${formatParamName(v)}:${v.value[1]}${equalSpacing}${formatParamValue(v)}`,
@@ -439,19 +424,17 @@ export namespace blk
         this.addEdit(document, blkRoot.location.start.offset, blkRoot.location.end.offset, blockFormatted);
       }
       catch (err) {
-        console.log({error: err.message});
+        console.log({ error: err.message });
         let errRange = new vscode.Range(document.positionAt(err.location.start.offset), document.positionAt(err.location.end.offset));
         errors.push(new vscode.Diagnostic(errRange, `Line: ${err.location.start.line}; Message: ${err.message}`, vscode.DiagnosticSeverity.Error));
       }
 
 
-      if (!this.onlyValidate && errors.length > 0 && this.edits.length > 0)
-      {
+      if (!this.onlyValidate && errors.length > 0 && this.edits.length > 0) {
         this.onlyValidate = true;
         setTimeout(() => this.provideDocumentRangeFormattingEdits(document, range, options, token), 500);
       }
-      else if (this.onlyValidate)
-      {
+      else if (this.onlyValidate) {
         this.onlyValidate = false;
         g_diagnostic_collection.set(document.uri, errors);
       }
