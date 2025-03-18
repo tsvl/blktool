@@ -217,6 +217,12 @@ export namespace blk
           }
         }.bind(this);
 
+        function normalizeCommaSpacing(valueStr: string): string {
+          // Replace any instance of comma followed by zero, multiple, or incorrect spaces
+          // with a comma followed by exactly one space
+          return valueStr.replace(/,\s*/g, ', ');
+        }
+
         function formatParamName(param): string {
           if (param.value[0][0] === "@")
             return `"${param.value[0]}"`;
@@ -225,6 +231,13 @@ export namespace blk
 
         function formatParamValue(param): string {
           let paramValue = param.value[2];
+
+          // Apply comma spacing normalization for comma-separated values
+          // Check if the parameter contains commas (likely a vector/color type)
+          if (paramValue.includes(',')) {
+            paramValue = normalizeCommaSpacing(paramValue);
+          }
+
           if (param.value[1] === "t" && paramValue[0] !== "'" && paramValue[0] !== '"')
             return `"${paramValue}"`;
           return paramValue;
