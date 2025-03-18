@@ -223,6 +223,24 @@ export namespace blk
           return valueStr.replace(/,\s*/g, ', ');
         }
 
+        function normalizeBooleanValues(valueStr: string, paramType: string): string {
+          // Only apply to boolean parameters (type 'b')
+          if (paramType !== 'b') {
+            return valueStr;
+          }
+
+          // Convert yes/no/true/false to lowercase regardless of original casing
+          const lowerValue = valueStr.toLowerCase();
+          if (lowerValue === 'yes' || lowerValue === 'no' ||
+              lowerValue === 'true' || lowerValue === 'false' ||
+              lowerValue === 'on' || lowerValue === 'off' ||
+              lowerValue === '1' || lowerValue === '0') {
+            return lowerValue;
+          }
+
+          return valueStr;
+        }
+
         function formatParamName(param): string {
           if (param.value[0][0] === "@")
             return `"${param.value[0]}"`;
@@ -231,6 +249,7 @@ export namespace blk
 
         function formatParamValue(param): string {
           let paramValue = param.value[2];
+          let paramType = param.value[1];
 
           // Apply comma spacing normalization for comma-separated values
           // Check if the parameter contains commas (likely a vector/color type)
@@ -238,7 +257,10 @@ export namespace blk
             paramValue = normalizeCommaSpacing(paramValue);
           }
 
-          if (param.value[1] === "t" && paramValue[0] !== "'" && paramValue[0] !== '"')
+          // Normalize boolean values to lowercase
+          paramValue = normalizeBooleanValues(paramValue, paramType);
+
+          if (paramType === "t" && paramValue[0] !== "'" && paramValue[0] !== '"')
             return `"${paramValue}"`;
           return paramValue;
         }
