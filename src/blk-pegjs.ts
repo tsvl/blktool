@@ -162,11 +162,19 @@ export namespace blk
       g_diagnostic_collection.clear();
 
       let fullText = document.getText(/* range */);
-      
+
       let parser = await getParser();
 
       const tabSize = 2
       const indentWith = ' '
+
+      // Get the user's formatting preferences
+      let conf = vscode.workspace.getConfiguration("blktool");
+      let useSpaces = conf.get<boolean>('formatter.useSpaces', true);
+
+      // Define spacing based on user preferences
+      const equalSpacing = useSpaces ? ' = ' : '=';
+      const blockSpacing = useSpaces ? ' ' : '';
 
       try {
         let blkRoot = parser.parse(fullText);
@@ -201,7 +209,7 @@ export namespace blk
           }
         }.bind(this);
 
-        function formatParamName(param): string {          
+        function formatParamName(param): string {
           if (param.value[0][0] === "@")
             return `"${param.value[0]}"`;
           return param.value[0];
@@ -214,7 +222,7 @@ export namespace blk
           return paramValue;
         }
 
-        function formatBlockName(block): string {          
+        function formatBlockName(block): string {
           if (block.name[0] === "@")
             return `"${block.name}"`;
           return block.name;
@@ -269,7 +277,7 @@ export namespace blk
               lines[lineNum] = [];
             lines[lineNum].push({ type: 'empty line', value: emptyline });
           }
-          
+
           const indent = indentWith.repeat(level * tabSize);
           const isRoot = block.name === '';
           const isEmpty = block.params.length <= 0 && block.blocks.length <= 0 && block.includes.length <= 0 && block.comments.length <= 0;
@@ -278,13 +286,13 @@ export namespace blk
           const prevIndent = isOneLine || isEmpty || isRoot ? '' : (indentWith.repeat((level - 1) * tabSize));
 
           const fmt = {
-            param: v => `${isOneLine ? '' : indent}${formatParamName(v)}:${v.value[1]} = ${formatParamValue(v)}`,
+            param: v => `${isOneLine ? '' : indent}${formatParamName(v)}:${v.value[1]}${equalSpacing}${formatParamValue(v)}`,
             block: v => `${indent}${replaceBlock(v, level + 1)}`,
             include: v => `${indent}include "${v.value}"`,
             comment: (v, f) => `${f ? ' ' : indent}${removeTrailingWhitespace(v.value)}`,
             'empty line': () => null
           }
-          
+
           let content = [];
 
           if (isMultiLine && !isRoot) {
@@ -300,7 +308,7 @@ export namespace blk
           for (let line of lines) {
             const isEndWithComment = line.length > 1 && line[line.length - 1].type === 'comment';
             if (isOneLine) {
-              content.push(" ");
+              content.push(blockSpacing);
             }
             const str = line.map(v => fmt[v.type](v.value, isEndWithComment)).filter(v => !!v).join(isMultiLine && !isEndWithComment ? "\n" : isOneLine ? "; " : "");
             content.push(str);
@@ -315,7 +323,7 @@ export namespace blk
           if (isRoot)
             return content.join("");
 
-          return `${formatBlockName(block)} {${content.join("")}${prevIndent}}`;
+          return `${formatBlockName(block)}${blockSpacing}{${content.join("")}${prevIndent}}`;
         }.bind(this);
 
         let level = 0;

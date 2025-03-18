@@ -103,6 +103,11 @@
             "WeaponSlots/WeaponSlot/WeaponPreset/Weapon/blk"
           ],
           "description": "Read additional params from BLK as reference to another BLK"
+        },
+        "blktool.formatter.useSpaces": {
+          "type": "boolean",
+          "default": true,
+          "description": "Add spaces around brackets and equal signs when formatting BLK files"
         }
       }
     }
