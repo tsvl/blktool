@@ -170,9 +170,10 @@ export namespace blk
       const insertSpaces = options.insertSpaces !== undefined ? options.insertSpaces : true;
       const indentWith = insertSpaces ? ' '.repeat(tabSize) : '\t';
 
-      // Get the user's formatting preferences for spaces around tokens
+      // Get the user's formatting preferences
       let conf = vscode.workspace.getConfiguration("blktool");
       let useSpaces = conf.get<boolean>('formatter.useSpaces', true);
+      let maxPreservedNewlines = conf.get<number>('formatter.maxPreservedNewlines', 2);
 
       // Define spacing based on user preferences
       const equalSpacing = useSpaces ? ' = ' : '=';
@@ -201,9 +202,14 @@ export namespace blk
                 this.addEdit(document, param.indent.start.offset, param.indent.end.offset, ' ');
             }
             else {
-              const indent = indentWith.repeat(level);
-              this.addEdit(document, param.indent.start.offset, param.indent.end.offset, indent);
+              // Apply newline limiting logic here
+              let newlineCount = paramLine - (paramLinePrev !== -1 ? paramLinePrev : blockLine) - 1;
+              let allowedNewlines = Math.min(newlineCount, maxPreservedNewlines);
+
+              let newIndent = '\n'.repeat(Math.max(1, allowedNewlines)) + indentWith.repeat(level);
+              this.addEdit(document, param.indent.start.offset, param.indent.end.offset, newIndent);
             }
+
             paramLinePrev = param.location.start.line;
           }
           for (let subBlock of block.blocks) {
@@ -258,25 +264,47 @@ export namespace blk
           }
           let emptylines = block.emptylines.filter(v => v.location.start.column === 1);
 
-          let emptylinesCount = 0;
-          for (let i = 1; i < emptylines.length; ++i) {
-            if (emptylines[i].location.start.line - 1 === emptylines[i - 1].location.start.line) {
-              ++emptylinesCount;
-            }
-            else {
-              for (let j = i - 1; j >= 0 && j > i - emptylinesCount; --j) {
-                emptylines[j]._remove = true;
+          // Apply maxPreservedNewlines when determining which empty lines to remove
+          // Group consecutive empty lines and keep only up to maxPreservedNewlines
+          let lastLine = -1;
+          let consecutiveCount = 0;
+          let linesToKeep = {};
+
+          // Sort empty lines by line number
+          emptylines.sort((a, b) => a.location.start.line - b.location.start.line);
+
+          // First pass - mark lines to keep
+          for (let emptyline of emptylines) {
+            const lineNum = emptyline.location.start.line;
+
+            if (lastLine !== -1 && lineNum === lastLine + 1) {
+              // Consecutive empty line
+              consecutiveCount++;
+              if (consecutiveCount <= maxPreservedNewlines) {
+                linesToKeep[lineNum] = true;
+              } else {
+                emptyline._remove = true;
               }
-              emptylinesCount = 0;
+            } else {
+              // Start of a new group of empty lines
+              consecutiveCount = 0;
+              if (maxPreservedNewlines > 0) {
+                // Only keep if we're preserving newlines
+                linesToKeep[lineNum] = true;
+              } else {
+                emptyline._remove = true;
+              }
             }
+
+            lastLine = lineNum;
           }
-          for (let j = emptylines.length - 1; j >= 0 && j > emptylines.length - emptylinesCount; --j) {
-            emptylines[j]._remove = true;
-          }
+
+          // Add the preserved empty lines to the lines array
           for (let emptyline of emptylines.filter(v => v._remove !== true)) {
-            const lineNum = emptyline.location.start.line
-            if (!lines[lineNum])
+            const lineNum = emptyline.location.start.line;
+            if (!lines[lineNum]) {
               lines[lineNum] = [];
+            }
             lines[lineNum].push({ type: 'empty line', value: emptyline });
           }
 
@@ -289,7 +317,11 @@ export namespace blk
 
           const fmt = {
             param: v => `${isOneLine ? '' : indent}${formatParamName(v)}:${v.value[1]}${equalSpacing}${formatParamValue(v)}`,
-            block: v => `${indent}${replaceBlock(v, level + 1)}`,
+            block: v => {
+              // For blocks, check if we need to add newline or not based on maxPreservedNewlines
+              const blockContent = replaceBlock(v, level + 1);
+              return `${indent}${blockContent}`;
+            },
             include: v => `${indent}include "${v.value}"`,
             comment: (v, f) => `${f ? ' ' : indent}${removeTrailingWhitespace(v.value)}`,
             'empty line': () => null
@@ -307,7 +339,10 @@ export namespace blk
             lines = [lines.reduce((res, v) => res.concat(v), [])];
           }
 
-          for (let line of lines) {
+          // Sort the lines by line number before processing
+          const sortedLines = Object.keys(lines).sort((a, b) => parseInt(a) - parseInt(b)).map(key => lines[key]);
+
+          for (let line of sortedLines) {
             const isEndWithComment = line.length > 1 && line[line.length - 1].type === 'comment';
             if (isOneLine) {
               content.push(blockSpacing);

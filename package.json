@@ -108,6 +108,13 @@
           "type": "boolean",
           "default": true,
           "description": "Add spaces around brackets and equal signs when formatting BLK files"
+        },
+        "blktool.formatter.maxPreservedNewlines": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Maximum number of consecutive empty lines to preserve when formatting BLK files"
         }
       }
     }
