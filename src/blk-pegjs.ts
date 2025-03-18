@@ -174,6 +174,7 @@ export namespace blk
       let conf = vscode.workspace.getConfiguration("blktool");
       let useSpaces = conf.get<boolean>('formatter.useSpaces', true);
       let maxPreservedNewlines = conf.get<number>('formatter.maxPreservedNewlines', 2);
+      let expandSingleLineBlocks = conf.get<boolean>('formatter.expandSingleLineBlocks', false);
 
       // Define spacing based on user preferences
       const equalSpacing = useSpaces ? ' = ' : '=';
@@ -275,6 +276,11 @@ export namespace blk
           return str.split('\n').map(v => v.replace(/\s+$/, '')).join('\n');
         }
 
+        function shouldExpandBlock(block, isOneLine) {
+          // Determine if this block should be expanded based on user preference and block properties
+          return expandSingleLineBlocks && isOneLine && block.params.length > 1;
+        }
+
         let replaceBlock = function (block, level) {
           let lines = [];
           for (let param of block.params) {
@@ -348,10 +354,17 @@ export namespace blk
           const isEmpty = block.params.length <= 0 && block.blocks.length <= 0 && block.includes.length <= 0 && block.comments.length <= 0;
           const isOneLine = !isRoot && block.blocks.length <= 0 && block.includes.length <= 0  && block.comments.length <= 0 && block.params.length > 0 && block.location.start.line === block.params[0].location.start.line;
           const isMultiLine = !isOneLine && !isEmpty;
-          const prevIndent = isOneLine || isEmpty || isRoot ? '' : (indentWith.repeat(level - 1));
+
+          // Check if we should expand this block based on user preference
+          const shouldExpand = shouldExpandBlock(block, isOneLine);
+
+          // Use correct indentation for the closing bracket based on expansion status
+          const prevIndent = (isOneLine && shouldExpand) ?
+              indentWith.repeat(level) :
+              (isOneLine || isEmpty || isRoot ? '' : indentWith.repeat(level - 1));
 
           const fmt = {
-            param: v => `${isOneLine ? '' : indent}${formatParamName(v)}:${v.value[1]}${equalSpacing}${formatParamValue(v)}`,
+            param: v => `${(isOneLine && !shouldExpand) ? '' : indent}${formatParamName(v)}:${v.value[1]}${equalSpacing}${formatParamValue(v)}`,
             block: v => {
               // For blocks, check if we need to add newline or not based on maxPreservedNewlines
               const blockContent = replaceBlock(v, level + 1);
@@ -364,11 +377,11 @@ export namespace blk
 
           let content = [];
 
-          if (isMultiLine && !isRoot) {
+          if ((isMultiLine || shouldExpand) && !isRoot) {
             content.push("\n");
           }
 
-          lines = lines.filter(v => !!v)
+          lines = lines.filter(v => !!v);
 
           if (isOneLine) {
             lines = [lines.reduce((res, v) => res.concat(v), [])];
@@ -377,17 +390,37 @@ export namespace blk
           // Sort the lines by line number before processing
           const sortedLines = Object.keys(lines).sort((a, b) => parseInt(a) - parseInt(b)).map(key => lines[key]);
 
-          for (let line of sortedLines) {
+          for (let i = 0; i < sortedLines.length; i++) {
+            const line = sortedLines[i];
             const isEndWithComment = line.length > 1 && line[line.length - 1].type === 'comment';
-            if (isOneLine) {
+
+            if (isOneLine && !shouldExpand) {
               content.push(blockSpacing);
             }
-            const str = line.map(v => fmt[v.type](v.value, isEndWithComment)).filter(v => !!v).join(isMultiLine && !isEndWithComment ? "\n" : isOneLine ? "; " : "");
-            content.push(str);
-            if (isMultiLine) {
-              content.push("\n");
+
+            if (shouldExpand) {
+              // For expanded blocks, separate each parameter with newlines
+              const elements = line.map(v => fmt[v.type](v.value, isEndWithComment)).filter(v => !!v);
+              if (isOneLine) {
+                // Split single line blocks into multiple lines
+                elements.forEach((element, idx) => {
+                  content.push(element);
+                  if (idx < elements.length - 1) {
+                    content.push("\n");
+                  }
+                });
+              } else {
+                content.push(elements.join(isMultiLine && !isEndWithComment ? "\n" : ""));
+              }
+            } else {
+              // Normal formatting for non-expanded blocks
+              const str = line.map(v => fmt[v.type](v.value, isEndWithComment)).filter(v => !!v).join(isMultiLine && !isEndWithComment ? "\n" : isOneLine ? "; " : "");
+              content.push(str);
             }
-            else if (isOneLine) {
+
+            if (isMultiLine || (shouldExpand && i < sortedLines.length - 1)) {
+              content.push("\n");
+            } else if (isOneLine && !shouldExpand) {
               content.push("; ");
             }
           }
@@ -395,7 +428,10 @@ export namespace blk
           if (isRoot)
             return content.join("");
 
-          return `${formatBlockName(block)}${blockSpacing}{${content.join("")}${prevIndent}}`;
+          // For expanded blocks, add a newline before the closing bracket to position it correctly
+          const closingBracket = (isOneLine && shouldExpand) ? "\n" + prevIndent + "}" : prevIndent + "}";
+
+          return `${formatBlockName(block)}${blockSpacing}{${content.join("")}${closingBracket}`;
         }.bind(this);
 
         let level = 0;

@@ -115,6 +115,11 @@
           "minimum": 0,
           "maximum": 3,
           "description": "Maximum number of consecutive empty lines to preserve when formatting BLK files"
+        },
+        "blktool.formatter.expandSingleLineBlocks": {
+          "type": "boolean",
+          "default": false,
+          "description": "Expand single-line blocks to multi-line format with each parameter on its own line"
         }
       }
     }
